@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 from google import genai
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import random
 import string
 
@@ -53,7 +53,7 @@ class Question(BaseModel):
     question: str
     options: List[str]
     answer: str
-    explanation: str
+    explanation: Optional[str] = "No explanation provided."
 
 class QuizResponse(BaseModel):
     questions: List[Question]
