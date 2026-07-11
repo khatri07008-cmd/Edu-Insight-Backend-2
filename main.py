@@ -57,7 +57,7 @@ class Question(BaseModel):
 
 class QuizResponse(BaseModel):
     questions: List[Question]
-    quiz_id: int 
+    quiz_id: str 
 
 class QuizSubmission(BaseModel):
     quiz_id: str  # <-- Change this from int to str
