@@ -8,6 +8,12 @@ from supabase import create_client
 from google import genai
 from pydantic import BaseModel
 from typing import List
+import random
+import string
+
+def generate_join_code():
+    # Generates a 6-character alphanumeric code (e.g., "X7K9M2")
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -54,7 +60,7 @@ class QuizResponse(BaseModel):
     quiz_id: int 
 
 class QuizSubmission(BaseModel):
-    quiz_id: int
+    quiz_id: str  # <-- Change this from int to str
     student_name: str
     score: int
     total_questions: int
@@ -93,37 +99,45 @@ def generate_quiz(request: TestRequest):
     """
     
     try:
+        # 1. Ask Gemini for the Quiz
         response = client.models.generate_content(
             model='gemini-2.5-flash', 
             contents=prompt
         )
         
+        # 2. Clean and Parse the JSON
         clean_text = response.text.strip().replace("```json", "").replace("```", "")
         structured_data = json.loads(clean_text)
 
+        # 3. Shuffle Options Manually (Extra Safety)
         for q in structured_data["questions"]:
             ans_text = q["answer"]
             random.shuffle(q["options"])
             q["answer"] = ans_text
                 
+        # 4. Generate the new 6-Character Join Code
+        quiz_id = generate_join_code()
+        
+        # 5. Prepare Database Payload with the String ID
         db_data = {
+            "id": quiz_id,
             "subject": request.subject,
             "grade": request.grade,
             "topic": request.topic,
             "difficulty": request.difficulty,
-            "quiz_data": structured_data,
             "start_time": request.start_time, 
-            "end_time": request.end_time      
+            "end_time": request.end_time,
+            "quiz_data": structured_data
         }
         
-        save_response = supabase.table("quizzes").insert(db_data).execute()
+        # 6. Insert into Supabase
+        supabase.table("quizzes").insert(db_data).execute()
                 
-        if save_response.data and len(save_response.data) > 0:
-            new_quiz_id = save_response.data[0]['id']
-            structured_data["quiz_id"] = new_quiz_id
-            return structured_data
-        else:
-            raise HTTPException(status_code=500, detail="Database insert failed: No data returned.")
+        # 7. Return the expected payload to the Frontend
+        return {
+            "quiz_id": quiz_id,
+            "questions": structured_data["questions"]
+        }
 
     except Exception as e:
         print(f"Server Error: {e}")
@@ -153,7 +167,7 @@ def submit_quiz(submission: QuizSubmission):
     
 # 10. Fetch Single Quiz for Student
 @app.get("/quiz/{quiz_id}")
-def get_single_quiz(quiz_id: int):
+def get_single_quiz(quiz_id: str):
     response = supabase.table("quizzes").select("*").eq("id", quiz_id).execute()
     if response.data:
         return response.data[0]
@@ -178,7 +192,7 @@ def analyze_results(query: TeacherQuery):
 
 # 12. Fetch Raw Data for Dashboard Charts
 @app.get("/quiz-results/{quiz_id}")
-def get_quiz_results(quiz_id: int):
+def get_quiz_results(quiz_id: str):
     quiz = supabase.table("quizzes").select("*").eq("id", quiz_id).execute()
     results = supabase.table("quiz_results").select("*").eq("quiz_id", quiz_id).execute()
     return {
@@ -188,7 +202,7 @@ def get_quiz_results(quiz_id: int):
 
 # 13. Delete Quiz Route
 @app.delete("/delete-quiz/{quiz_id}")
-def delete_quiz(quiz_id: int):
+def delete_quiz(quiz_id: str):
     try:
         supabase.table("quiz_results").delete().eq("quiz_id", quiz_id).execute()
         supabase.table("quizzes").delete().eq("id", quiz_id).execute()
